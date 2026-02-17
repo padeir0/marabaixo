@@ -9,8 +9,9 @@ See the LICENSE file for more information.
 
 #include <stdio.h>
 
-#define MB_DEBUG \
-    fprintf(stderr, "[DEBUG] %s:%s line %d\n", \
-            __FILE__, __func__, __LINE__);
-
+#define MB_debug_fatal(fmt, ...)                                    \
+      fprintf(stderr, "[DEBUG] %s:%s:%d\n",                   \
+              __FILE__, __func__, __LINE__);                  \
+      fprintf(stderr, "\t" fmt "\n", ##__VA_ARGS__);          \
+      abort();                                                
 #endif

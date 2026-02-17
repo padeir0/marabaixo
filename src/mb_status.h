@@ -11,7 +11,6 @@ typedef enum {
   MB_status_ok,
   MB_status_divisionByZero,
   MB_status_outOfMemory,
-  MB_status_invalidDigit,
   MB_status_naturalNumberOverflow,
 } mb_Status;
 

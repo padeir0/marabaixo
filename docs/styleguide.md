@@ -105,7 +105,7 @@ must be marked `const`.
 ## Miscelaneous
 
 Other small things:
- - Macro usage is restricted to constants and header guards.
+ - Macros should be used sparingly.
  - Never use global variables inside library code (inside tests, this is fine).
  - Functions that need dynamic allocation should receive allocators as arguments.
  - Never use `goto`, `continue` or `for` loops.

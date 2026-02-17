@@ -15,6 +15,11 @@ See the LICENSE file for more information.
 #include "mb_allocator.h"
 #include "mb_util.h"
 #include "mb_order.h"
+#include "mb_config.h"
+
+#if MB_config_debug
+  #include "mb_debug.h"
+#endif
 
 typedef struct {
   u32* digits;
@@ -46,11 +51,6 @@ void i_mb_natural_natVecFree(mb_Allocator mem, u32* vec) {
 /* END: NATVEC */
 
 /* BEGIN: UTIL */
-
-static inline
-bool i_mb_natural_notDigit(u32 digit) {
-  return MB_natural_base <= digit;
-}
 
 /* END: UTIL */
 mb_Natural mb_natural_empty(void) {
@@ -124,9 +124,12 @@ mb_Status mb_natural_setVec(mb_Allocator mem, u32* digits, i32 len, mb_Natural* 
 }
 
 mb_Status mb_natural_set(mb_Allocator mem, u32 digit, mb_Natural* out) {
-  if (i_mb_natural_notDigit(digit)){
-    return MB_status_invalidDigit;
-  }
+  #if MB_config_debug
+    if (MB_natural_base <= digit) {
+      MB_debug_fatal("`digit` is not a valid digit. digit = %d.", digit);
+    }
+  #endif
+
   if (digit == 0) {
     out->len = 0;
     return MB_status_ok;
@@ -148,6 +151,12 @@ bool mb_natural_isZero(const mb_Natural* N) {
 if `out` has enough space, no allocations are performed.
 */
 mb_Status mb_natural_copy(mb_Allocator mem, const mb_Natural* A, mb_Natural* out) {
+  #if MB_config_debug
+    if (A == out) {
+      MB_debug_fatal("Aliasing requirements not met. A = %p, out = %p.", (void*)A, (void*)out);
+    }
+  #endif
+
   if (mb_natural_isZero(A)) {
     return mb_natural_set(mem, 0, out);
   }
@@ -189,8 +198,13 @@ bool mb_natural_equal(const mb_Natural* A, const mb_Natural* B) {
 // `A` and `B` might be aliased together,
 // but neither may be aliased with `out`.
 mb_Status mb_natural_add(mb_Allocator mem, const mb_Natural* A, const mb_Natural* B, mb_Natural* out) {
-  u32 max_length = mb_util_maxU32(A->len, B->len);
+  #if MB_config_debug
+    if (A == out || B == out) {
+      MB_debug_fatal("Aliasing requirements not met. A = %p, B = %p, out = %p.", (void*)A, (void*)B, (void*)out);
+    }
+  #endif
 
+  u32 max_length = mb_util_maxU32(A->len, B->len);
   u32 i = 0;
   i32 carry = 0;
 
@@ -235,9 +249,16 @@ mb_Status mb_natural_add(mb_Allocator mem, const mb_Natural* A, const mb_Natural
 
 // `A` and `out` must be different objects
 mb_Status mb_natural_addDigit(mb_Allocator mem, const mb_Natural* A, u32 B, mb_Natural* out) {
-  if (i_mb_natural_notDigit(B)) {
-    return MB_status_invalidDigit;
-  }
+  #if MB_config_debug
+    if (A == out) {
+      MB_debug_fatal("Aliasing requirements not met. A = %p, out = %p.", (void*)A, (void*)out);
+    }
+
+    if (MB_natural_base <= B) {
+      MB_debug_fatal("B is not a valid digit. B = %d.", B);
+    }
+  #endif
+
   if (mb_natural_isZero(A)) {
     return mb_natural_set(mem, B, out);
   }
@@ -287,9 +308,16 @@ mb_Status mb_natural_addDigit(mb_Allocator mem, const mb_Natural* A, u32 B, mb_N
 // mb_status mb_natural_mult(mb_Allocator mem, const mb_Natural* A, const mb_Natural* B, mb_Natural* out) {}
 
 mb_Status mb_natural_multDigit(mb_Allocator mem, const mb_Natural* A, u32 B, mb_Natural* out) {
-  if (i_mb_natural_notDigit(B)) {
-    return MB_status_invalidDigit;
-  }
+  #if MB_config_debug
+    if (A == out) {
+      MB_debug_fatal("Aliasing requirements not met. A = %p, out = %p.", (void*)A, (void*)out);
+    }
+
+    if (MB_natural_base <= B) {
+      MB_debug_fatal("B is not a valid digit. B = %d.", B);
+    }
+  #endif
+
   if (mb_natural_isZero(A) || B == 0) {
     return mb_natural_set(mem, 0, out);
   }
@@ -366,6 +394,16 @@ void i_mb_natural_removeLeadingZeroes(mb_Natural* out) {
    DRAGONS:
 */
 mb_Status mb_natural_divDigit(mb_Allocator mem, const mb_Natural* A, u32 B, mb_Natural* Q, u32* R) {
+  #if MB_config_debug
+    if (A == Q) {
+      MB_debug_fatal("Aliasing requirements not met. A = %p, out = %p.", (void*)A, (void*)Q);
+    }
+
+    if (MB_natural_base <= B) {
+      MB_debug_fatal("B is not a valid digit. B = %d.", B);
+    }
+  #endif
+
   if (B == 0) {
     return MB_status_divisionByZero;
   }
@@ -448,6 +486,12 @@ mb_Order mb_natural_compare(const mb_Natural* A, const mb_Natural* B) {
 }
 
 mb_Status mb_natural_distance(mb_Allocator mem, const mb_Natural* A, const mb_Natural* B, mb_Natural* out) {
+  #if MB_config_debug
+    if (A == out || B == out) {
+      MB_debug_fatal("Aliasing requirements not met. A = %p, B = %p, out = %p.", (void*)A, (void*)B, (void*)out);
+    }
+  #endif
+
   mb_Order res = mb_natural_compare(A, B);
   if (res == MB_order_equal) {
     return mb_natural_set(mem, 0, out);
@@ -507,6 +551,16 @@ Computes |A - B|, in other words:
   else B-A
 */
 mb_Status mb_natural_distanceDigit(mb_Allocator mem, const mb_Natural* A, u32 B, mb_Natural* out) {
+  #if MB_config_debug
+    if (A == out) {
+      MB_debug_fatal("Aliasing requirements not met. A = %p, out = %p.", (void*)A, (void*)out);
+    }
+
+    if (MB_natural_base <= B) {
+      MB_debug_fatal("B is not a valid digit. B = %d.", B);
+    }
+  #endif
+
   if (mb_natural_isZero(A)) {
     return mb_natural_set(mem, B, out);
   }
@@ -584,22 +638,22 @@ void i_mb_natural_WriteU32(u32 n, char* buffer) {
 /* Only writes a number if the given buffer has sufficient size.
 */
 static
-size_t i_mb_natural_snprint(const mb_Natural nat, char* buffer, usize buffSize, bool padLeft, bool padRight) {
+size_t i_mb_natural_snprint(const mb_Natural* nat, char* buffer, usize buffSize, bool padLeft, bool padRight) {
   // NOTE(1):
-  usize neededBytes = (usize)(nat.len * MB_natural_digitsPerInt);
+  usize neededBytes = (usize)(nat->len * MB_natural_digitsPerInt);
   if (buffSize == 0 || neededBytes >= buffSize) {
     return 0;
   }
-  if (nat.len == 0) {
+  if (nat->len == 0) {
     *buffer = '0';
     return 1;
   }
 
-  i64 i = (i64)nat.len -1;
+  i64 i = (i64)nat->len -1;
   char* block = buffer;
 
   do {
-    u32 currDigit = nat.digits[i];
+    u32 currDigit = nat->digits[i];
     // SAFE(1):
     i_mb_natural_WriteU32(currDigit, block);
     block += MB_natural_digitsPerInt;
@@ -647,7 +701,7 @@ it either fully writes the number or returns 0.
 */
 /* TODO: refactor this to use mb_buffer
 */
-usize mb_natural_snprint(const mb_Natural nat, char* buffer, size_t buffSize) {
+usize mb_natural_snprint(const mb_Natural* nat, char* buffer, size_t buffSize) {
   return i_mb_natural_snprint(nat, buffer, buffSize, false, true);
 }
 

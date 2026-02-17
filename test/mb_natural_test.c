@@ -28,13 +28,13 @@ char buffer[DEFAULT_SIZE];
 // TODO: improve tests by using an allocator that allows you to
 //       check for number of allocations performed and leaks
 
-void printNat(mb_Natural n) {
+void printNat(mb_Natural* n) {
   usize written = mb_natural_snprint(n, buffer, DEFAULT_SIZE);
   if (written == 0) {
     printf("written 0 bytes.\n");
   }
   printf("%.*s", (int)written, buffer);
-  printf(" (length: %d, cap: %d)\n", n.len, n.cap);
+  printf(" (length: %d, cap: %d)\n", n->len, n->cap);
 }
 
 /* BEGIN: testing addDigit*/
@@ -552,7 +552,7 @@ bool test_natural_snprint_0(void) {
   mb_Natural A = mb_natural_empty();
   mb_natural_set(MB_stdAlloc, 1, &A);
 
-  usize written = mb_natural_snprint(A, test_buffer, DEFAULT_SIZE);
+  usize written = mb_natural_snprint(&A, test_buffer, DEFAULT_SIZE);
   if (written == 0) {
     return false;
   }
@@ -573,7 +573,7 @@ bool test_natural_snprint_1(void) {
 
   mb_natural_setVec(MB_stdAlloc, digits, DILEN, &A);
 
-  usize written = mb_natural_snprint(A, test_buffer, DEFAULT_SIZE);
+  usize written = mb_natural_snprint(&A, test_buffer, DEFAULT_SIZE);
   if (written == 0) {
     return false;
   }
@@ -589,7 +589,7 @@ bool test_natural_snprint_2(void) {
 
   mb_natural_set(MB_stdAlloc, 314159, &A);
 
-  usize written = mb_natural_snprint(A, test_buffer, DEFAULT_SIZE);
+  usize written = mb_natural_snprint(&A, test_buffer, DEFAULT_SIZE);
   if (written == 0) {
     return false;
   }
@@ -605,7 +605,7 @@ bool test_natural_snprint_3(void) {
 
   mb_natural_set(MB_stdAlloc, 0, &A);
 
-  usize written = mb_natural_snprint(A, test_buffer, DEFAULT_SIZE);
+  usize written = mb_natural_snprint(&A, test_buffer, DEFAULT_SIZE);
   if (written == 0) {
     return false;
   }
