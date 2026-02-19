@@ -6,9 +6,9 @@ char g_mb_memory[I_MB_memoryLength];
 
 int main(void) {
   mb_Natural A = mb_natural_empty();
-  mb_Natural B = mb_natural_empty();
+  u32 R = 0;
 
-  mb_natural_add(MB_stdAlloc, &A, &A, &B);
+  mb_natural_divDigit(MB_stdAlloc, &A, 1, NULL, &R);
 
   return 1;
 }

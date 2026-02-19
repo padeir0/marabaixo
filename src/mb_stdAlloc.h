@@ -30,12 +30,13 @@ void i_mb_stdAlloc_free_all(__attribute__((unused)) void* heap) {
   abort();
 }
 
-const
-mb_Allocator MB_stdAlloc = {
+mb_Allocator _mb_stdAlloc = {
   .heap = NULL,
   .alloc = i_mb_stdAlloc_alloc,
   .free = i_mb_stdAlloc_free,
   .freeAll = i_mb_stdAlloc_free_all,
 };
+
+mb_Allocator* MB_stdAlloc = &_mb_stdAlloc;
 
 #endif

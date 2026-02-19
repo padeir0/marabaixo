@@ -14,4 +14,6 @@ typedef enum {
   MB_status_naturalNumberOverflow,
 } mb_Status;
 
+#define MB_status_check if (st != MB_status_ok) { return st; }
+
 #endif

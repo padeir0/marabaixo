@@ -35,8 +35,8 @@ typedef struct {
 
 /* BEGIN: NATVEC */
 static inline
-u32* i_mb_natural_natVecAlloc(mb_Allocator mem, usize size, char* func) {
-  return (u32*)mem.alloc(mem.heap, size*sizeof(u32), func);
+u32* i_mb_natural_natVecAlloc(mb_Allocator* mem, usize size, char* func) {
+  return (u32*)mem->alloc(mem->heap, size*sizeof(u32), func);
 }
 
 static inline
@@ -45,8 +45,8 @@ void i_mb_natural_natVecCopy(u32* source, usize len, u32* dest) {
 }
 
 static inline
-void i_mb_natural_natVecFree(mb_Allocator mem, u32* vec) {
-  mem.free(mem.heap, vec);
+void i_mb_natural_natVecFree(mb_Allocator* mem, u32* vec) {
+  mem->free(mem->heap, vec);
 }
 /* END: NATVEC */
 
@@ -62,7 +62,7 @@ mb_Natural mb_natural_empty(void) {
 }
 
 static
-mb_Status i_mb_natural_pushDigit(mb_Allocator mem, u32 digit, mb_Natural* out) {
+mb_Status i_mb_natural_pushDigit(mb_Allocator* mem, u32 digit, mb_Natural* out) {
   if (out->cap == 0) {
     out->digits = i_mb_natural_natVecAlloc(mem, MB_natural_minNatVec, (char*)__func__);
     if (out->digits == NULL) {
@@ -92,11 +92,9 @@ mb_Status i_mb_natural_pushDigit(mb_Allocator mem, u32 digit, mb_Natural* out) {
   return MB_status_ok;
 }
 
-mb_Status mb_natural_multBase(mb_Allocator mem, mb_Natural* out) { 
-  mb_Status st = i_mb_natural_pushDigit(mem, 0, out);
-  if (st != MB_status_ok) {
-    return st;
-  }
+mb_Status mb_natural_multBase(mb_Allocator* mem, mb_Natural* out) { 
+  mb_Status st = i_mb_natural_pushDigit(mem, 0, out); MB_status_check;
+
   i64 i = out->len - 1;
   while (0 < i) {
     out->digits[i] = out->digits[i-1];
@@ -110,23 +108,38 @@ mb_Status mb_natural_multBase(mb_Allocator mem, mb_Natural* out) {
 ie, MSD -> LSD. This is why the code goes backwards to fill
 the number.
 */
-mb_Status mb_natural_setVec(mb_Allocator mem, u32* digits, i32 len, mb_Natural* out) {
+mb_Status mb_natural_setVec(mb_Allocator* mem, u32* digits, i32 len, mb_Natural* out) {
+  #if MB_config_debug
+    if (mem == NULL || digits == NULL || out == NULL) {
+      MB_debug_fatalFmt("Some pointer parameter is null. mem = %p, digits = %p, out = %p.", (void*)mem, (void*)digits, (void*)out);
+    }
+    {
+      int i = 0;
+      while (i < len) {
+        if (MB_natural_base <= digits[i]) {
+          MB_debug_fatalFmt("`digits` contains an invalid digit. digit[%d] = %d.", i, digits[i]);
+        }
+        i++;
+      }
+    }
+  #endif
+
   out->len = 0;
   int i = len-1;
   while (0 <= i) {
-    mb_Status st = i_mb_natural_pushDigit(mem, digits[i], out);
-    if (st != MB_status_ok) {
-      return st;
-    }
+    mb_Status st = i_mb_natural_pushDigit(mem, digits[i], out); MB_status_check;
     i--;
   }
   return MB_status_ok;
 }
 
-mb_Status mb_natural_set(mb_Allocator mem, u32 digit, mb_Natural* out) {
+mb_Status mb_natural_set(mb_Allocator* mem, u32 digit, mb_Natural* out) {
   #if MB_config_debug
+    if (mem == NULL || out == NULL) {
+      MB_debug_fatalFmt("Some pointer parameter is null. mem = %p, out = %p.", (void*)mem, (void*)out);
+    }
     if (MB_natural_base <= digit) {
-      MB_debug_fatal("`digit` is not a valid digit. digit = %d.", digit);
+      MB_debug_fatalFmt("`digit` is not a valid digit. digit = %d.", digit);
     }
   #endif
 
@@ -150,10 +163,13 @@ bool mb_natural_isZero(const mb_Natural* N) {
 /* Copies the contents of `A` to `out`,
 if `out` has enough space, no allocations are performed.
 */
-mb_Status mb_natural_copy(mb_Allocator mem, const mb_Natural* A, mb_Natural* out) {
+mb_Status mb_natural_copy(mb_Allocator* mem, const mb_Natural* A, mb_Natural* out) {
   #if MB_config_debug
+    if (mem == NULL || A == NULL || out == NULL) {
+      MB_debug_fatalFmt("Some pointer parameter is null. mem = %p, A = %p, out = %p.", (void*)mem, (void*)A, (void*)out);
+    }
     if (A == out) {
-      MB_debug_fatal("Aliasing requirements not met. A = %p, out = %p.", (void*)A, (void*)out);
+      MB_debug_fatalFmt("Aliasing requirements not met. A = %p, out = %p.", (void*)A, (void*)out);
     }
   #endif
 
@@ -195,14 +211,67 @@ bool mb_natural_equal(const mb_Natural* A, const mb_Natural* B) {
   return true;
 }
 
+// TODO: UNTESTED:
+mb_Order mb_natural_compareDigit(const mb_Natural* A, u32 b) {
+  if (b == 0 && A->len == 0) {
+    return MB_order_equal;
+  }
+  if (b != 0 && A->len == 0) {
+    return MB_order_greater;
+  }
+
+  if (A->len > 1) {
+    return MB_order_less;
+  }
+  u32 a = A->digits[0];
+  if (a < b) {
+    return MB_order_less;
+  } else if (b < a) {
+    return MB_order_greater;
+  }
+  return MB_order_equal;
+}
+
+mb_Order mb_natural_compare(const mb_Natural* A, const mb_Natural* B) {
+  if (A->len < B->len) {
+    return MB_order_less;
+  } else if (B->len < A->len) {
+    return MB_order_greater;
+  }
+  // NOTE(1)
+  if (A->len == 0) {
+    return MB_order_equal;
+  }
+
+  i64 i = A->len-1;
+  while (0 <= i) {
+    u32 a = A->digits[i];
+    u32 b = B->digits[i];
+    if (a < b) {
+      return MB_order_less;
+    } else if (b < a) {
+      return MB_order_greater;
+    }
+    i--;
+  }
+
+  return MB_order_equal;
+  /* NOTE(1): If this happens, both are zero.
+  */
+}
+
 // `A` and `B` might be aliased together,
 // but neither may be aliased with `out`.
-mb_Status mb_natural_add(mb_Allocator mem, const mb_Natural* A, const mb_Natural* B, mb_Natural* out) {
+mb_Status mb_natural_add(mb_Allocator* mem, const mb_Natural* A, const mb_Natural* B, mb_Natural* out) {
   #if MB_config_debug
+    if (mem == NULL || A == NULL || B == NULL || out == NULL) {
+      MB_debug_fatalFmt("Some pointer parameter is null. mem = %p, A = %p, B = %p, out = %p.", (void*)mem, (void*)A, (void*)B, (void*)out);
+    }
     if (A == out || B == out) {
-      MB_debug_fatal("Aliasing requirements not met. A = %p, B = %p, out = %p.", (void*)A, (void*)B, (void*)out);
+      MB_debug_fatalFmt("Aliasing requirements not met. A = %p, B = %p, out = %p.", (void*)A, (void*)B, (void*)out);
     }
   #endif
+  mb_Status st;
 
   u32 max_length = mb_util_maxU32(A->len, B->len);
   u32 i = 0;
@@ -210,10 +279,7 @@ mb_Status mb_natural_add(mb_Allocator mem, const mb_Natural* A, const mb_Natural
 
   while (i < max_length || carry > 0) {
     if (i == out->len) {
-      mb_Status st = i_mb_natural_pushDigit(mem, 0, out);
-      if (st != MB_status_ok) {
-        return st;
-      }
+      st = i_mb_natural_pushDigit(mem, 0, out); MB_status_check;
     }
     i64 res = carry;
     if (i < A->len) {
@@ -248,14 +314,17 @@ mb_Status mb_natural_add(mb_Allocator mem, const mb_Natural* A, const mb_Natural
 }
 
 // `A` and `out` must be different objects
-mb_Status mb_natural_addDigit(mb_Allocator mem, const mb_Natural* A, u32 B, mb_Natural* out) {
+mb_Status mb_natural_addDigit(mb_Allocator* mem, const mb_Natural* A, u32 B, mb_Natural* out) {
   #if MB_config_debug
+    if (mem == NULL || A == NULL || out == NULL) {
+      MB_debug_fatalFmt("Some pointer parameter is null. mem = %p, A = %p, out = %p.", (void*)mem, (void*)A, (void*)out);
+    }
     if (A == out) {
-      MB_debug_fatal("Aliasing requirements not met. A = %p, out = %p.", (void*)A, (void*)out);
+      MB_debug_fatalFmt("Aliasing requirements not met. A = %p, out = %p.", (void*)A, (void*)out);
     }
 
     if (MB_natural_base <= B) {
-      MB_debug_fatal("B is not a valid digit. B = %d.", B);
+      MB_debug_fatalFmt("B is not a valid digit. B = %d.", B);
     }
   #endif
 
@@ -281,12 +350,119 @@ mb_Status mb_natural_addDigit(mb_Allocator mem, const mb_Natural* A, u32 B, mb_N
     }
 
     // SAFE(1):
-    mb_Status st = i_mb_natural_pushDigit(mem, (u32)res, out);
-    if (st != MB_status_ok) {
-      return st;
-    }
+    mb_Status st = i_mb_natural_pushDigit(mem, (u32)res, out); MB_status_check;
     i++;
   } while (0 < carry || i < A->len);
+
+  return MB_status_ok;
+  /* SAFE(1): since our carry is set to the digit in the first iteration,
+              we need to prove the cast above is valid:
+
+              if (carry < BASE) and (digit < BASE)
+                 and ((res = carry+digit) >= BASE)
+              then (res - BASE < BASE)
+              proof:
+                carry < BASE            implies
+                carry + BASE < 2*BASE   implies
+                carry + digit < 2*BASE  implies
+                res - BASE < BASE
+              as desired. \qed
+  */
+}
+
+// same as `mb_natural_add` but `A` is aliased with `out`
+// TODO: UNTESTED:
+mb_Status mb_natural_incBy(mb_Allocator* mem, const mb_Natural* B, mb_Natural* out) {
+  #if MB_config_debug
+    if (mem == NULL || B == NULL || out == NULL) {
+      MB_debug_fatalFmt("Some pointer parameter is null. mem = %p, B = %p, out = %p.", (void*)mem, (void*)B, (void*)out);
+    }
+    if (B == out) {
+      MB_debug_fatalFmt("Aliasing requirements not met. B = %p, out = %p.", (void*)B, (void*)out);
+    }
+  #endif
+  mb_Status st;
+
+  u32 max_length = mb_util_maxU32(out->len, B->len);
+  u32 i = 0;
+  i32 carry = 0;
+
+  while (i < max_length || carry > 0) {
+    if (i == out->len) {
+      st = i_mb_natural_pushDigit(mem, 0, out); MB_status_check;
+    }
+    i64 res = carry;
+    if (i < out->len) {
+      res += out->digits[i];
+    }
+    if (i < B->len) {
+      res += B->digits[i];
+    }
+    if (MB_natural_base <= res) {
+      carry = 1; // NOTE(1)
+      out->digits[i] = (u32)(res - MB_natural_base); // SAFE(1)
+    } else {
+      carry = 0;
+      out->digits[i] = (u32)res; // SAFE(2)
+    }
+    i++;
+  }
+
+  return MB_status_ok;
+  /* SAFE(1): `res` is at most equal to (BASE-1 + BASE-1) = (2*BASE - 2)
+               this means that:
+                 (res - BASE) <= (2*BASE - 2) - BASE
+                               = BASE - 2
+               ie, it fits both as a digit and as a u32.
+     SAFE(2): in this branch, `res` is strictly less than BASE.
+     NOTE(1): again, res <= 2*BASE - 2, so:
+                 res / BASE <= (2* BASE - 2)/BASE
+                             = 2 - 2/BASE
+                             < 2.
+              so the carry is at most an integer less than 2, ie, 1.
+  */
+}
+
+/*
+Same as `mb_natural_addDigit` but here `A` is aliased with `out`.
+TODO: UNTESTED:
+*/
+mb_Status mb_natural_incByDigit(mb_Allocator* mem, u32 B, mb_Natural* out) {
+  #if MB_config_debug
+    if (mem == NULL || out == NULL) {
+      MB_debug_fatalFmt("Some pointer parameter is null. mem = %p, out = %p.", (void*)mem, (void*)out);
+    }
+    if (MB_natural_base <= B) {
+      MB_debug_fatalFmt("B is not a valid digit. B = %d.", B);
+    }
+  #endif
+
+  if (mb_natural_isZero(out)) {
+    return mb_natural_set(mem, B, out);
+  }
+
+  u32 i = 0;
+  u32 carry = B;
+  i64 res = 0;
+  u32 length = out->len;
+
+  do {
+    res = carry;
+    if (i < length) {
+      res += out->digits[i];
+    }
+
+    if (MB_natural_base <= res) {
+      carry = 1;
+      res -= MB_natural_base;
+    } else {
+      carry = 0;
+    }
+
+    // SAFE(1):
+    out->digits[i] = (u32)res;
+    i++;
+  } while (0 < carry || i < length);
 
   return MB_status_ok;
   /* SAFE(1): since our carry is set to the digit in the first iteration,
@@ -307,16 +483,21 @@ mb_Status mb_natural_addDigit(mb_Allocator mem, const mb_Natural* A, u32 B, mb_N
 // TODO: mb_natural_mult
 // mb_status mb_natural_mult(mb_Allocator mem, const mb_Natural* A, const mb_Natural* B, mb_Natural* out) {}
 
-mb_Status mb_natural_multDigit(mb_Allocator mem, const mb_Natural* A, u32 B, mb_Natural* out) {
+mb_Status mb_natural_multDigit(mb_Allocator* mem, const mb_Natural* A, u32 B, mb_Natural* out) {
   #if MB_config_debug
+    if (mem == NULL || A == NULL || out == NULL) {
+      MB_debug_fatalFmt("Some pointer parameter is null. mem = %p, A = %p, out = %p.", (void*)mem, (void*)A, (void*)out);
+    }
+
     if (A == out) {
-      MB_debug_fatal("Aliasing requirements not met. A = %p, out = %p.", (void*)A, (void*)out);
+      MB_debug_fatalFmt("Aliasing requirements not met. A = %p, out = %p.", (void*)A, (void*)out);
     }
 
     if (MB_natural_base <= B) {
-      MB_debug_fatal("B is not a valid digit. B = %d.", B);
+      MB_debug_fatalFmt("B is not a valid digit. B = %d.", B);
     }
   #endif
+  mb_Status st;
 
   if (mb_natural_isZero(A) || B == 0) {
     return mb_natural_set(mem, 0, out);
@@ -328,10 +509,7 @@ mb_Status mb_natural_multDigit(mb_Allocator mem, const mb_Natural* A, u32 B, mb_
 
   while (i < A->len || carry > 0) {
     if (i == out->len) {
-      mb_Status st = i_mb_natural_pushDigit(mem, 0, out);
-      if (st != MB_status_ok) {
-        return st;
-      }
+      st = i_mb_natural_pushDigit(mem, 0, out); MB_status_check;
     }
     i64 res = carry;
     if (i < A->len) {
@@ -384,23 +562,131 @@ void i_mb_natural_removeLeadingZeroes(mb_Natural* out) {
   */
 }
 
-// TODO: mb_natural_div
-// NOTE: this may need one additional parameter as scratch space, figure this out
-// mb_status mb_natural_div(mb_Allocator mem, const mb_Natural* A, const mb_Natural* B, mb_Natural* Q, mb_Natural* R) {}
+// sets `out` to `MB_order_equal` if `guess*B == idd` or if `(guess+1)*B > idd`
+mb_Status i_mb_natural_testGuess(mb_Allocator* mem, const mb_Natural* idd, const mb_Natural* B, u32 guess, mb_Natural* scratch, mb_Order* out) {
+  mb_Status st;
+  st = mb_natural_multDigit(mem, B, guess, scratch); MB_status_check;
+  mb_Order res = mb_natural_compare(scratch, idd);
+  if (res == MB_order_equal || res == MB_order_greater) {
+    *out = res;
+  } else {
+    // NOTE(1)
+    st = mb_natural_incBy(mem, B, scratch); MB_status_check;
+    res = mb_natural_compare(scratch, idd);
+    if (res == MB_order_greater) {
+      *out = MB_order_equal; // NOTE(2)
+    }
+    *out = MB_order_less;
+  }
+  return MB_status_ok;
+  /*  NOTE(1): Here we know `res == MB_order_less`, so that `guess*B < idd`.
+      NOTE(2): (guess+1)*B > IDD.
+  */
+}
+
+#define I_MB_natural_divMaxNumGuesses 32
+
+/* Finds `Q` and `R` such that `A = Q*B + R`.
+   TODO: UNTESTED:
+   DRAGONS:
+*/
+mb_Status mb_natural_div(mb_Allocator* mem,
+                         const mb_Natural* A, const mb_Natural* B,
+                         mb_Natural* Q, mb_Natural* R) {
+  #if MB_config_debug
+    if (mem == NULL || A == NULL || B == NULL || Q == NULL || R == NULL) {
+      MB_debug_fatalFmt("Some pointer parameter is null. mem = %p, A = %p, B = %p, Q = %p, R = %p.", (void*)mem, (void*)A, (void*)B, (void*)Q, (void*)R);
+    }
+
+    if (A == Q || A == R || B == Q || B == R) {
+      MB_debug_fatalFmt("Aliasing requirements not met. A = %p, B = %p, Q = %p, R = %p.", (void*)A, (void*)B, (void*)Q, (void*)R);
+    }
+  #endif
+  mb_Status st;
+
+  if (mb_natural_isZero(B)) {
+    return MB_status_divisionByZero;
+  }
+  if (mb_natural_isZero(A)) {
+    st = mb_natural_set(mem, 0, R); MB_status_check;
+    return mb_natural_set(mem, 0, Q);
+  }
+  mb_Natural scratch = mb_natural_empty(); // NOTE(1)
+
+  // NOTE(2)
+  i64 i = (i64)A->len - 1;
+  while (0 <= i) {
+    st = mb_natural_multBase(mem, R);                 MB_status_check;
+    st = mb_natural_incByDigit(mem, A->digits[i], R); MB_status_check;
+
+    mb_Order ord = mb_natural_compare(R, B);
+
+    if (ord == MB_order_less) {         // R < B
+      if (mb_natural_isZero(Q) == false) {
+        st = mb_natural_multBase(mem, Q); MB_status_check;
+      }
+    } else if (ord == MB_order_equal) { // R == B
+      st = mb_natural_set(mem, 0, R);        MB_status_check;
+      st = mb_natural_multBase(mem, Q);      MB_status_check;
+      st = mb_natural_incByDigit(mem, 1, Q); MB_status_check;
+    } else {                            // R > B
+      u32 low = 1; // NOTE(3)
+      u32 high = MB_natural_base - 1;
+      u32 guess = (low + high)/2;
+      i32 j = 0;
+
+      mb_Order res;
+      st = i_mb_natural_testGuess(mem, R, B, guess, &scratch, &res); MB_status_check;
+
+      // NOTE(4)
+      while (res != MB_order_equal && j < I_MB_natural_divMaxNumGuesses) {
+        if (res == MB_order_less) {
+          low = guess;
+        } else if (res == MB_order_greater) {
+          high = guess;
+        }
+        guess = (low + high)/2;
+        st = i_mb_natural_testGuess(mem, R, B, guess, &scratch, &res); MB_status_check;
+        j++;
+      }
+    }
+    
+    i--;
+  }
+
+  i_mb_natural_natVecFree(mem, scratch.digits);
+  return MB_status_ok;
+  /* NOTE(1): This allocation is fine for now. In the future, I will implement
+              a pool of natural numbers as scratch space that will be passed as
+              an argument together with the allocator.
+     NOTE(2): We implement naïve long division, following the article at:
+                  https://en.wikipedia.org/wiki/Long_division#Algorithm_for_arbitrary_base
+     NOTE(3): Since R > B, then `guess` is at least 1.
+     NOTE(4): This digit we're searching for is unique and lives in an ordered space (the natural numbers up to BASE),
+              so that we can use binary search. There are a few ways to reduce the size
+              of this space, namely by finding closer upper and lower bounds. Also, the complexity is log(BASE),
+              so the maximum number of iterations is 30. Since the base may change, we set it up to 32, ie,
+              log(U32_MAX).
+  */
+}
 
 /* Finds `Q` and `R` such that `A = Q*B + R`.
    `R` is guaranteed to be less than `B` by the Division Theorem,
    hence, it's a u32.
    DRAGONS:
 */
-mb_Status mb_natural_divDigit(mb_Allocator mem, const mb_Natural* A, u32 B, mb_Natural* Q, u32* R) {
+mb_Status mb_natural_divDigit(mb_Allocator* mem, const mb_Natural* A, u32 B, mb_Natural* Q, u32* R) {
   #if MB_config_debug
+    if (mem == NULL || A == NULL || Q == NULL || R == NULL) {
+      MB_debug_fatalFmt("Some pointer parameter is null. mem = %p, A = %p, Q = %p, R = %p.", (void*)mem, (void*)A, (void*)Q, (void*)R);
+    }
+
     if (A == Q) {
-      MB_debug_fatal("Aliasing requirements not met. A = %p, out = %p.", (void*)A, (void*)Q);
+      MB_debug_fatalFmt("Aliasing requirements not met. A = %p, out = %p.", (void*)A, (void*)Q);
     }
 
     if (MB_natural_base <= B) {
-      MB_debug_fatal("B is not a valid digit. B = %d.", B);
+      MB_debug_fatalFmt("B is not a valid digit. B = %d.", B);
     }
   #endif
 
@@ -424,9 +710,7 @@ mb_Status mb_natural_divDigit(mb_Allocator mem, const mb_Natural* A, u32 B, mb_N
     idd -= q*B;  // NOTE(2)
 
     mb_Status st = i_mb_natural_pushDigit(mem, (u32)q, Q); // SAFE(2):
-    if (st != MB_status_ok) {
-      return st;
-    }
+    MB_status_check;
 
     i--;
   }
@@ -458,39 +742,17 @@ mb_Status mb_natural_divDigit(mb_Allocator mem, const mb_Natural* A, u32 B, mb_N
   */
 }
 
-
-mb_Order mb_natural_compare(const mb_Natural* A, const mb_Natural* B) {
-  if (A->len < B->len) {
-    return MB_order_less;
-  } else if (B->len < A->len) {
-    return MB_order_greater;
-  }
-  // NOTE(1)
-  if (A->len == 0) {
-    return MB_order_equal;
-  }
-
-  i64 i = A->len-1;
-  while (0 <= i) {
-    u32 a = A->digits[i];
-    u32 b = B->digits[i];
-    if (a < b) {
-      return MB_order_less;
-    } else if (b < a) {
-      return MB_order_greater;
-    }
-    i--;
-  }
-
-  return MB_order_equal;
-}
-
-mb_Status mb_natural_distance(mb_Allocator mem, const mb_Natural* A, const mb_Natural* B, mb_Natural* out) {
+mb_Status mb_natural_distance(mb_Allocator* mem, const mb_Natural* A, const mb_Natural* B, mb_Natural* out) {
   #if MB_config_debug
+    if (mem == NULL || A == NULL || B == NULL || out == NULL) {
+      MB_debug_fatalFmt("Some pointer parameter is null. mem = %p, A = %p, B == %p, out = %p.", (void*)mem, (void*)A, (void*)B, (void*)out);
+    }
+
     if (A == out || B == out) {
-      MB_debug_fatal("Aliasing requirements not met. A = %p, B = %p, out = %p.", (void*)A, (void*)B, (void*)out);
+      MB_debug_fatalFmt("Aliasing requirements not met. A = %p, B = %p, out = %p.", (void*)A, (void*)B, (void*)out);
     }
   #endif
+  mb_Status st;
 
   mb_Order res = mb_natural_compare(A, B);
   if (res == MB_order_equal) {
@@ -508,10 +770,7 @@ mb_Status mb_natural_distance(mb_Allocator mem, const mb_Natural* A, const mb_Na
   u32 i = 0;
   while (i < A->len || carry > 0) {
     if (i == out->len) {
-      mb_Status res = i_mb_natural_pushDigit(mem, 0, out);
-      if (res != MB_status_ok) {
-        return res;
-      }
+      st = i_mb_natural_pushDigit(mem, 0, out); MB_status_check;
     }
 
     // NOTE(1)
@@ -546,18 +805,83 @@ mb_Status mb_natural_distance(mb_Allocator mem, const mb_Natural* A, const mb_Na
 }
 
 /*
+Similar to `mb_natural_distance` but `A` is aliased with `out`.
+*/
+// TODO: UNTESTED:
+mb_Status mb_natural_decrBy(__attribute__((unused)) mb_Allocator* mem, const mb_Natural* B, mb_Natural* out) {
+  #if MB_config_debug
+    if (mem == NULL || B == NULL || out == NULL) {
+      MB_debug_fatalFmt("Some pointer parameter is null. mem = %p, B = %p, out = %p.", (void*)mem, (void*)B, (void*)out);
+    }
+
+    if (B == out) {
+      MB_debug_fatalFmt("Aliasing requirements not met. B = %p, out = %p.", (void*)B, (void*)out);
+    }
+    mb_Order res = mb_natural_compare(B, out);
+    if (res == MB_order_greater) {
+      MB_debug_fatal("`B` is larger than `out`.");
+    }
+  #endif
+
+  if (mb_natural_isZero(B)) {
+    return MB_status_ok;
+  }
+
+  i64 carry = 0;
+  u32 i = 0;
+  u32 length = out->len;
+
+  while (i < length || carry > 0) {
+    // NOTE(1)
+    i64 res = -carry;
+    if (i < length) {
+      res += (i64)out->digits[i];
+    }
+    if (i < B->len) {
+      res -= B->digits[i];
+    }
+
+    if (res < 0) {
+      carry = 1;
+      out->digits[i] = (u32)(MB_natural_base + res); // SAFE(1)
+    } else {
+      carry = 0;
+      out->digits[i] = (u32)res; // SAFE(2)
+    }
+
+    i++;
+  }
+
+  i_mb_natural_removeLeadingZeroes(out);
+  return MB_status_ok;
+  /* NOTE(1): `res` is not an i32 because `out->digits[i]` may be `u32_max`
+              if BASE ever changes.
+     SAFE(1): here `res < 0` and the largest negative number `res`
+              can be is -BASE, the result is then 0.
+     SAFE(2): `res` is at most BASE-1, when carry = 0, B->digits[i] = 0
+              and out->digits[i] = BASE-1
+  */
+}
+
+// mb_natural_decrBy
+
+/*
 Computes |A - B|, in other words:
   if B<A then A-B
   else B-A
 */
-mb_Status mb_natural_distanceDigit(mb_Allocator mem, const mb_Natural* A, u32 B, mb_Natural* out) {
+mb_Status mb_natural_distanceDigit(mb_Allocator* mem, const mb_Natural* A, u32 B, mb_Natural* out) {
   #if MB_config_debug
+    if (mem == NULL || A == NULL || out == NULL) {
+      MB_debug_fatalFmt("Some pointer parameter is null. mem = %p, A = %p, out = %p.", (void*)mem, (void*)A, (void*)out);
+    }
+
     if (A == out) {
-      MB_debug_fatal("Aliasing requirements not met. A = %p, out = %p.", (void*)A, (void*)out);
+      MB_debug_fatalFmt("Aliasing requirements not met. A = %p, out = %p.", (void*)A, (void*)out);
     }
 
     if (MB_natural_base <= B) {
-      MB_debug_fatal("B is not a valid digit. B = %d.", B);
+      MB_debug_fatalFmt("B is not a valid digit. B = %d.", B);
     }
   #endif
 
@@ -591,15 +915,67 @@ mb_Status mb_natural_distanceDigit(mb_Allocator mem, const mb_Natural* A, u32 B,
     }
     // SAFE(2):
     mb_Status st = i_mb_natural_pushDigit(mem, (u32)res, out);
-    if (st != MB_status_ok) {
-      return st;
-    }
+    MB_status_check;
+
     i++;
   } while (carry > 0 || i < A->len);
   i_mb_natural_removeLeadingZeroes(out);
   return MB_status_ok;
   /* SAFE(1): since |A-B| < A, we can safely use `i` here, we will never
               have a situation where both `carry > 0` and `i >= A.len` are true.
+     SAFE(2): see that because `A.digit[i]` and `B` are both positive numbers
+              less than `MB_natural_base`, then `res = A.digits[0] - B` is also less
+              than the base, which is less than U32_MAX.
+  */
+}
+
+/* Decrements `out` by `B` */
+// TODO: UNTESTED:
+mb_Status mb_natural_decrByDigit(mb_Allocator* mem, u32 B, mb_Natural* out) {
+  #if MB_config_debug
+    if (mem == NULL || out == NULL) {
+      MB_debug_fatalFmt("Some pointer parameter is null. mem = %p, out = %p.", (void*)mem, (void*)out);
+    }
+
+    if (MB_natural_base <= B) {
+      MB_debug_fatalFmt("B is not a valid digit. B = %d.", B);
+    }
+
+    if (mb_natural_compareDigit(out, B) == MB_order_less) {
+      MB_debug_fatal("Can't decrement: `out` is less than `B`.");
+    }
+  #endif
+
+  if (mb_natural_isZero(out)) { // NOTE(1)
+    return MB_status_ok;
+  }
+
+  if (out->len == 1) {
+    u32 digit = out->digits[0];
+    return mb_natural_set(mem, digit-B, out);
+  }
+
+  // B < `A`, assuming `out` has no leading zeroes.
+  i64 res = 0;
+  i64 carry = B;
+  u32 i = 0;
+  do {
+    // SAFE(1):
+    res = out->digits[i] - carry;
+    if (res < 0) {
+      carry = 1;
+      res += MB_natural_base;
+    } else {
+      carry = 0;
+    }
+
+    out->digits[i] = (u32)res; // SAFE(2)
+    i++;
+  } while (carry > 0 || i < out->len);
+  i_mb_natural_removeLeadingZeroes(out);
+  return MB_status_ok;
+  /* SAFE(1): since |out - B| < out, we can safely use `i` here, we will never
+              have a situation where both `carry > 0` and `i >= out->len` are true.
      SAFE(2): see that because `A.digit[i]` and `B` are both positive numbers
               less than `MB_natural_base`, then `res = A.digits[0] - B` is also less
               than the base, which is less than U32_MAX.
@@ -702,6 +1078,11 @@ it either fully writes the number or returns 0.
 /* TODO: refactor this to use mb_buffer
 */
 usize mb_natural_snprint(const mb_Natural* nat, char* buffer, size_t buffSize) {
+  #if MB_config_debug
+    if (nat == NULL || buffer == NULL) {
+      MB_debug_fatalFmt("Some pointer parameter is null. nat = %p, buffer = %p.", (void*)nat, (void*)buffer);
+    }
+  #endif
   return i_mb_natural_snprint(nat, buffer, buffSize, false, true);
 }
 
