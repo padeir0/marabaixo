@@ -217,11 +217,11 @@ mb_Order mb_natural_compareDigit(const mb_Natural* A, u32 b) {
     return MB_order_equal;
   }
   if (b != 0 && A->len == 0) {
-    return MB_order_greater;
+    return MB_order_less;
   }
 
   if (A->len > 1) {
-    return MB_order_less;
+    return MB_order_greater;
   }
   u32 a = A->digits[0];
   if (a < b) {

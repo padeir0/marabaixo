@@ -234,6 +234,89 @@ bool test_natural_compare_7(void) {
 }
 /* END: testing compare */
 
+/* BEGIN: testing compareDigit */
+bool test_natural_compareDigit_1(void) {
+  mb_Natural a = mb_natural_empty();
+  mb_Order out;
+
+  mb_natural_set(MB_stdAlloc, 42, &a);
+
+  out = mb_natural_compareDigit(&a, 42);
+
+  return out == MB_order_equal;
+}
+
+bool test_natural_compareDigit_2(void) {
+  mb_Natural a = mb_natural_empty();
+  mb_Order out;
+
+  u32 A_DIGS[] = {127, 0, 0, 0};
+  #define A_DIGS_LEN (sizeof(A_DIGS) / sizeof(A_DIGS[0]))
+  mb_natural_setVec(MB_stdAlloc, A_DIGS, A_DIGS_LEN, &a);
+
+  out  = mb_natural_compareDigit(&a, 1);
+
+  return out == MB_order_greater;
+}
+
+bool test_natural_compareDigit_3(void) {
+  mb_Natural a = mb_natural_empty();
+  mb_Order out;
+
+  u32 A_DIGS[] = {1, 0};
+  #define A_DIGS_LEN (sizeof(A_DIGS) / sizeof(A_DIGS[0]))
+  mb_natural_setVec(MB_stdAlloc, A_DIGS, A_DIGS_LEN, &a);
+
+  out  = mb_natural_compareDigit(&a, MB_natural_base-1);
+
+  return out == MB_order_greater;
+}
+
+bool test_natural_compareDigit_4(void) {
+  mb_Natural a = mb_natural_empty();
+  mb_Order out;
+
+  mb_natural_set(MB_stdAlloc, 0, &a);
+
+  out = mb_natural_compareDigit(&a, 0);
+
+  return out == MB_order_equal;
+}
+
+bool test_natural_compareDigit_5(void) {
+  mb_Natural a = mb_natural_empty();
+  mb_Order out;
+
+  mb_natural_set(MB_stdAlloc, 0, &a);
+
+  out = mb_natural_compareDigit(&a, 1);
+
+  return out == MB_order_less;
+}
+
+bool test_natural_compareDigit_6(void) {
+  mb_Natural a = mb_natural_empty();
+  mb_Order out;
+
+  mb_natural_set(MB_stdAlloc, 5, &a);
+
+  out = mb_natural_compareDigit(&a, 6);
+
+  return out == MB_order_less;
+}
+
+bool test_natural_compareDigit_7(void) {
+  mb_Natural a = mb_natural_empty();
+  mb_Order out;
+
+  mb_natural_set(MB_stdAlloc, 6, &a);
+
+  out = mb_natural_compareDigit(&a, 5);
+
+  return out == MB_order_greater;
+}
+/* END: testing compareDigit */
+
 /* BEGIN: testing add */
 
 // tests 0 as identity
@@ -992,6 +1075,14 @@ Tester tests[] = {
   {"test_natural_distance_1", test_natural_distance_1},
   {"test_natural_distance_2", test_natural_distance_2},
   {"test_natural_distance_3", test_natural_distance_3},
+
+  {"test_natural_compareDigit_1", test_natural_compareDigit_1},
+  {"test_natural_compareDigit_2", test_natural_compareDigit_2},
+  {"test_natural_compareDigit_3", test_natural_compareDigit_3},
+  {"test_natural_compareDigit_4", test_natural_compareDigit_4},
+  {"test_natural_compareDigit_5", test_natural_compareDigit_5},
+  {"test_natural_compareDigit_6", test_natural_compareDigit_6},
+  {"test_natural_compareDigit_7", test_natural_compareDigit_7},
 };
 #define TEST_LEN (int)(sizeof(tests) / sizeof(tests[0]))
 
