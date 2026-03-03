@@ -211,7 +211,6 @@ bool mb_natural_equal(const mb_Natural* A, const mb_Natural* B) {
   return true;
 }
 
-// TODO: UNTESTED:
 mb_Order mb_natural_compareDigit(const mb_Natural* A, u32 b) {
   if (b == 0 && A->len == 0) {
     return MB_order_equal;
@@ -276,6 +275,7 @@ mb_Status mb_natural_add(mb_Allocator* mem, const mb_Natural* A, const mb_Natura
   u32 max_length = mb_util_maxU32(A->len, B->len);
   u32 i = 0;
   i32 carry = 0;
+  st = mb_natural_set(mem, 0, out); MB_status_check;
 
   while (i < max_length || carry > 0) {
     if (i == out->len) {
@@ -332,9 +332,11 @@ mb_Status mb_natural_addDigit(mb_Allocator* mem, const mb_Natural* A, u32 B, mb_
     return mb_natural_set(mem, B, out);
   }
 
+  mb_Status st;
   u32 i = 0;
   u32 carry = B;
   i64 res = 0;
+  st = mb_natural_set(mem, 0, out); MB_status_check;
 
   do {
     res = carry;
@@ -440,6 +442,7 @@ mb_Status mb_natural_incByDigit(mb_Allocator* mem, u32 B, mb_Natural* out) {
   if (mb_natural_isZero(out)) {
     return mb_natural_set(mem, B, out);
   }
+  mb_Status st;
 
   u32 i = 0;
   u32 carry = B;
@@ -450,6 +453,8 @@ mb_Status mb_natural_incByDigit(mb_Allocator* mem, u32 B, mb_Natural* out) {
     res = carry;
     if (i < length) {
       res += out->digits[i];
+    } else {
+      st = i_mb_natural_pushDigit(mem, 0, out); MB_status_check
     }
 
     if (MB_natural_base <= res) {
@@ -699,42 +704,45 @@ mb_Status mb_natural_divDigit(mb_Allocator* mem, const mb_Natural* A, u32 B, mb_
     return MB_status_ok;
   }
 
-  i64 idd = 0; // NOTE(1)
+  mb_Status st = mb_natural_set(mem, 0, Q); MB_status_check;
+  *R = 0;
   i64 i = A->len - 1; // SAFE(3)
   i64 q = 0;
+  i64 carry = 0;
 
   while (0 <= i) {
-    idd *= MB_natural_base;
-    idd += A->digits[i];
-    q = idd / B; // NOTE(3)
-    idd -= q*B;  // NOTE(2)
+    i64 idd = (i64)A->digits[i] + carry * MB_natural_base; // NOTE(1)
+    q     = idd/B; // NOTE(3)
+    carry = idd%B;  // NOTE(2)
 
-    mb_Status st = i_mb_natural_pushDigit(mem, (u32)q, Q); // SAFE(2):
+    // TODO: this probably should be pushDigit + reverse
+    st = mb_natural_multBase(mem, Q);
+    st = mb_natural_incByDigit(mem, (u32)q, Q); // SAFE(2)
     MB_status_check;
 
     i--;
   }
   i_mb_natural_removeLeadingZeroes(Q);
-  *R = (u32)idd; // SAFE(1):
+  *R = (u32)carry; // SAFE(1)
   return MB_status_ok;
   /*
    NOTE(1): Since `B` is a digit, then `idd` is at most 2 digits.
    This means we can use an `i64` as intermediate dividend.
-   NOTE(2): After this line, `idd` will be less than `B`. This follows
-   immediately from the Division Theorem: `idd` becomes the intermediate remainder.
-   SAFE(1): For the reasons stated above, `idd < B < MB_natural_base`.
-   NOTE(3): At the end of the loop, `idd` is less than `B`, which means an
+   NOTE(2): After this line, `carry` will be less than `B`. This follows
+   immediately from the Division Theorem: `carry` becomes the intermediate remainder.
+   SAFE(1): For the reasons stated above, `carry < B < MB_natural_base`.
+   NOTE(3): At the end of the loop, `carry` is less than `B`, which means an
    upper bound for `idd` at this point is
        (B-1)*MB_natural_base + MB_natural_base-1 = 
        B*MB_natural_base - MB_natural_base + MB_natural_base - 1 = 
        B*MB_natural_base - 1.
    Since `q = floor(idd/B)` then:
-       floor(idd/B) < 
+       floor(idd/B) <= 
        floor((B*MB_natural_base - 1) / B) = 
        floor(MB_natural_base - (1/B)).
    Since `0 < 1/B <= 1` then
        floor(MB_natural_base - (1/B)) = MB_natural_base - 1.
-   So that `q < MB_natural_base - 1`.
+   So that `q <= MB_natural_base - 1`.
    SAFE(2): Because of the reasons stated above, the cast is safe and
    `q` is a valid digit.
    SAFE(3): This subtraction is OK since we checked earlier that
@@ -768,6 +776,8 @@ mb_Status mb_natural_distance(mb_Allocator* mem, const mb_Natural* A, const mb_N
 
   i64 carry = 0;
   u32 i = 0;
+  st = mb_natural_set(mem, 0, out); MB_status_check;
+
   while (i < A->len || carry > 0) {
     if (i == out->len) {
       st = i_mb_natural_pushDigit(mem, 0, out); MB_status_check;
@@ -884,7 +894,6 @@ mb_Status mb_natural_distanceDigit(mb_Allocator* mem, const mb_Natural* A, u32 B
       MB_debug_fatalFmt("B is not a valid digit. B = %d.", B);
     }
   #endif
-
   if (mb_natural_isZero(A)) {
     return mb_natural_set(mem, B, out);
   }
@@ -901,9 +910,12 @@ mb_Status mb_natural_distanceDigit(mb_Allocator* mem, const mb_Natural* A, u32 B
   }
 
   // B < A, assuming A has no leading zeroes.
+  mb_Status st;
   i64 res = 0;
   i64 carry = B;
   u32 i = 0;
+  st = mb_natural_set(mem, 0, out); MB_status_check;
+
   do {
     // SAFE(1):
     res = A->digits[i] - carry;

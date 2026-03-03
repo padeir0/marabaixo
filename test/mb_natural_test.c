@@ -16,17 +16,16 @@ char buffer[DEFAULT_SIZE];
 // TODO: write tests for snprint when buffer is exact fit
 // TODO: write tests for snprint when buffer size is 1
 // TODO: remove the usage of macros (DIGS_LEN) in inner scopes
-// TODO: write a checker to verify if all numbers abides to the invariantes:
+// TODO: write a checker to verify if all numbers abides to the invariants:
 //           len == 0 represents zero
 //           or len > 0 and:
 //              digits[len - 1] != 0
 //              all digits are < MB_natural_base
 // TODO: write tests where both operands are 0
 // TODO: write tests to assert failure when aliasing rules are violated
-// TODO: write tests for divDigit: a/a = 1
-// TODO: write tests for divDigit: a/1 = a
 // TODO: improve tests by using an allocator that allows you to
 //       check for number of allocations performed and leaks
+// TODO: write tests for when the out-param has garbage (distance, distanceDigit, multDigit, copy)
 
 void printNat(mb_Natural* n) {
   usize written = mb_natural_snprint(n, buffer, DEFAULT_SIZE);
@@ -120,6 +119,22 @@ bool test_natural_addDigit_4(void) {
   checkStatus(s);
 
   return mb_natural_equalDigit(&a, 314159);
+}
+
+// sets garbage to the outparam.
+bool test_natural_addDigit_5(void) {
+  mb_Natural a = mb_natural_empty();
+  mb_Natural out = mb_natural_empty();
+  mb_Natural expected = mb_natural_empty();
+
+  mb_natural_set(MB_stdAlloc, 314159, &a);
+  mb_natural_set(MB_stdAlloc, 999999, &out);
+  mb_natural_set(MB_stdAlloc, 314160, &expected);
+
+  mb_Status s = mb_natural_addDigit(MB_stdAlloc, &a, 1, &out);
+  checkStatus(s);
+
+  return mb_natural_equalDigit(&out, 314160);
 }
 /* END: testing addDigit */
 
@@ -985,6 +1000,43 @@ bool test_natural_divDigit_6(void) {
   mb_Status s = mb_natural_divDigit(MB_stdAlloc, &A, B, &Q, &R);
   return s == MB_status_divisionByZero;
 }
+
+// tests 1 as identity
+bool test_natural_divDigit_7(void) {
+  mb_Natural A = mb_natural_empty();
+  mb_natural_set(MB_stdAlloc, 42, &A);
+  u32 B = 1;
+  mb_Natural Q = mb_natural_empty();
+  u32 R;
+
+  mb_Natural exp_Q = mb_natural_empty();
+  mb_natural_set(MB_stdAlloc, 42, &exp_Q);
+  u32 exp_R = 0;
+
+  mb_Status s = mb_natural_divDigit(MB_stdAlloc, &A, B, &Q, &R);
+  checkStatus(s);
+
+  return R == exp_R && mb_natural_equal(&Q, &exp_Q);
+}
+
+// tests a/a = 1*a + 0
+bool test_natural_divDigit_8(void) {
+  mb_Natural A = mb_natural_empty();
+  mb_natural_set(MB_stdAlloc, 42, &A);
+  u32 B = 42;
+  mb_Natural Q = mb_natural_empty();
+  u32 R;
+
+  mb_Natural exp_Q = mb_natural_empty();
+  mb_natural_set(MB_stdAlloc, 1, &exp_Q);
+  u32 exp_R = 0;
+
+  mb_Status s = mb_natural_divDigit(MB_stdAlloc, &A, B, &Q, &R);
+  checkStatus(s);
+
+  return R == exp_R && mb_natural_equal(&Q, &exp_Q);
+}
+
 /* END: testing divDigit */
 
 /* BEGIN: testing copy */
@@ -1015,7 +1067,110 @@ bool test_natural_copy_2(void) {
 
   return mb_natural_equal(&a, &out);
 }
+
+// must work even if has garbage in the out param
+bool test_natural_copy_3(void) {
+  mb_Status s;
+  mb_Natural a = mb_natural_empty();
+  mb_Natural out = mb_natural_empty();
+
+  u32 A_DIGS[] = {999999999, 999999999};
+  #define A_DIGS_LEN (sizeof(A_DIGS) / sizeof(A_DIGS[0]))
+  s = mb_natural_setVec(MB_stdAlloc, A_DIGS, A_DIGS_LEN, &a); checkStatus(s);
+  s = mb_natural_set(MB_stdAlloc, 123456, &out); checkStatus(s);
+
+  s = mb_natural_copy(MB_stdAlloc, &a, &out); checkStatus(s);
+
+  return mb_natural_equal(&a, &out);
+}
 /* END: testing copy*/
+
+/* BEGIN: grow/shrink tests */
+// addDigit/distanceDigit
+bool test_natural_growShrink_1(void) {
+  mb_Natural A = mb_natural_empty();
+  u32 B = MB_natural_base-1;
+  mb_Natural C = mb_natural_empty();
+
+  mb_Status st;
+  st = mb_natural_set(MB_stdAlloc, 0, &A); checkStatus(st);
+  st = mb_natural_set(MB_stdAlloc, 0, &C); checkStatus(st);;
+
+  int i = 0;
+  while (i < 100) {
+    st = mb_natural_addDigit(MB_stdAlloc, &A, B, &C); checkStatus(st);
+    st = mb_natural_copy(MB_stdAlloc, &C, &A); checkStatus(st);
+    i++;
+  }
+
+  while (0 < i) {
+    st = mb_natural_distanceDigit(MB_stdAlloc, &A, B, &C); checkStatus(st);
+    st = mb_natural_copy(MB_stdAlloc, &C, &A); checkStatus(st);
+    i--;
+  }
+
+  return mb_natural_isZero(&A);
+}
+
+// add/distance
+bool test_natural_growShrink_2(void) {
+  mb_Natural A = mb_natural_empty();
+  mb_Natural B = mb_natural_empty();
+  mb_Natural C = mb_natural_empty();
+
+  mb_Status st;
+  st = mb_natural_set(MB_stdAlloc, 0, &A); checkStatus(st);
+  st = mb_natural_set(MB_stdAlloc, MB_natural_base-1, &B); checkStatus(st);
+  st = mb_natural_set(MB_stdAlloc, 0, &C); checkStatus(st);;
+
+  int i = 0;
+  while (i < 100) {
+    st = mb_natural_add(MB_stdAlloc, &A, &B, &C); checkStatus(st);
+    st = mb_natural_copy(MB_stdAlloc, &C, &A); checkStatus(st);
+    i++;
+  }
+
+  while (0 < i) {
+    st = mb_natural_distance(MB_stdAlloc, &A, &B, &C); checkStatus(st);
+    st = mb_natural_copy(MB_stdAlloc, &C, &A); checkStatus(st);
+    i--;
+  }
+
+  return mb_natural_isZero(&A);
+}
+
+// multDigit/divDigit
+bool test_natural_growShrink_3(void) {
+  mb_Natural A = mb_natural_empty();
+  u32 B = 8;
+  mb_Natural C = mb_natural_empty();
+  u32 R = 0;
+  const int maxIter = 16;
+
+  mb_Status st;
+  st = mb_natural_set(MB_stdAlloc, 1, &A); checkStatus(st);
+  st = mb_natural_set(MB_stdAlloc, 1, &C); checkStatus(st);;
+
+  int i = 0;
+  while (i < maxIter) {
+    st = mb_natural_multDigit(MB_stdAlloc, &A, B, &C); checkStatus(st);
+    st = mb_natural_copy(MB_stdAlloc, &C, &A); checkStatus(st);
+    i++;
+  }
+
+  while (0 < i) {
+    st = mb_natural_divDigit(MB_stdAlloc, &A, B, &C, &R); checkStatus(st);
+    st = mb_natural_copy(MB_stdAlloc, &C, &A); checkStatus(st);
+    if (R != 0) {
+      return false;
+    }
+    i--;
+  }
+
+  return mb_natural_equalDigit(&A, 1);
+}
+
+/* END: grow/shrink tests */
 
 /* BEGIN: DRIVER CODE */
 Tester tests[] = {
@@ -1029,6 +1184,7 @@ Tester tests[] = {
   {"test_natural_addDigit_2", test_natural_addDigit_2},
   {"test_natural_addDigit_3", test_natural_addDigit_3},
   {"test_natural_addDigit_4", test_natural_addDigit_4},
+  {"test_natural_addDigit_5", test_natural_addDigit_5},
 
   {"test_natural_distanceDigit_1", test_natural_distanceDigit_1},
   {"test_natural_distanceDigit_2", test_natural_distanceDigit_2},
@@ -1053,15 +1209,18 @@ Tester tests[] = {
   {"test_natural_divDigit_4", test_natural_divDigit_4},
   {"test_natural_divDigit_5", test_natural_divDigit_5},
   {"test_natural_divDigit_6", test_natural_divDigit_6},
+  {"test_natural_divDigit_7", test_natural_divDigit_7},
+  {"test_natural_divDigit_8", test_natural_divDigit_8},
 
   {"test_natural_copy_1", test_natural_copy_1},
   {"test_natural_copy_2", test_natural_copy_2},
+  {"test_natural_copy_3", test_natural_copy_3},
 
   {"test_natural_add_0a", test_natural_add_0a},
   {"test_natural_add_0b", test_natural_add_0b},
   {"test_natural_add_1a", test_natural_add_1a},
   {"test_natural_add_1b", test_natural_add_1b},
-  {"test_natural_add_2", test_natural_add_2},
+  {"test_natural_add_2",  test_natural_add_2},
 
   {"test_natural_compare_1", test_natural_compare_1},
   {"test_natural_compare_2", test_natural_compare_2},
@@ -1083,6 +1242,10 @@ Tester tests[] = {
   {"test_natural_compareDigit_5", test_natural_compareDigit_5},
   {"test_natural_compareDigit_6", test_natural_compareDigit_6},
   {"test_natural_compareDigit_7", test_natural_compareDigit_7},
+
+  {"test_natural_growShrink_1", test_natural_growShrink_1},
+  {"test_natural_growShrink_2", test_natural_growShrink_2},
+  {"test_natural_growShrink_3", test_natural_growShrink_3},
 };
 #define TEST_LEN (int)(sizeof(tests) / sizeof(tests[0]))
 
